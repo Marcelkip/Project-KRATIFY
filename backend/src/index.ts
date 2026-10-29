@@ -11,7 +11,8 @@ const users = [
   { name: 'Yassin', password: 'yassin18' },
   {name: 'Marcel', password: 'marcel18' },
   {name: 'Maik', password: 'maik18'},
-  {name: 'Stanislav', password: 'stanislav18'}
+  {name: 'Stanislav', password: 'stanislav18'},
+  {name: 'Andre', password: 'Andre18'}
   
 ]
 
