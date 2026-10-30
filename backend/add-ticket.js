@@ -1,46 +1,46 @@
-const { PrismaClient } = require("./prisma/generated/prisma");
+const { PrismaClient } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
 async function main() {
-  const report = await prisma.report.create({
+  const report = await prisma.rapport.create({
     data: {
-      title: "KRAT Test Report",
-      dates: ["2026-09-21"],
-      status: "pending",
+      titel: "KRAT testrapport",
+      datums: ["2026-09-21"],
+      status: "in_afwachting",
     },
   });
 
-  const ticket = await prisma.ticket.create({
+  const ticket = await prisma.melding.create({
     data: {
       topdeskId: "KRAT-TEST-001",
-      category: "Hardware",
-      subCategory: "Laptop",
-      systems: ["Laptop"],
-      issue_types: ["hardware"],
-      briefDescriptionAI: "Laptop does not start",
-      callerDepartment: "IT",
-      callerRole: "Employee",
-      closed: false,
-      completed: false,
-      responded: true,
-      creationDate: new Date(),
-      callDate: new Date(),
+      categorie: "Hardware",
+      subcategorie: "Laptop",
+      systemen: ["Laptop"],
+      probleemtypes: ["hardware"],
+      korteBeschrijvingAI: "Laptop start niet",
+      melderAfdeling: "IT",
+      melderRol: "Medewerker",
+      gesloten: false,
+      afgerond: false,
+      gereageerd: true,
+      aanmaakDatum: new Date(),
+      oproepDatum: new Date(),
       status: "Open",
-      entryType: "self_service",
+      invoertype: "zelfbediening",
       impact: "medium",
-      urgency: "medium",
-      priority: "medium",
-      briefDescription: "Laptop does not start",
-      latestUpdate: new Date(),
-      latestUpdateBy: "KRAT Test",
-      reportId: report.id,
+      urgentie: "medium",
+      prioriteit: "medium",
+      korteBeschrijving: "Laptop start niet",
+      laatsteBijwerking: new Date(),
+      laatstBijgewerktDoor: "KRAT-test",
+      rapportId: report.id,
     },
   });
 
-  console.log("Report created:", report.id);
-  console.log("Ticket created:", ticket.id);
-  console.log("TOPdesk ID:", ticket.topdeskId);
+  console.log("Rapport aangemaakt:", report.id);
+  console.log("Melding aangemaakt:", ticket.id);
+  console.log("TOPdesk-id:", ticket.topdeskId);
 }
 
 main()

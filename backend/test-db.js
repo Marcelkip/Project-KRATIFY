@@ -1,110 +1,110 @@
 
-const { PrismaClient, ReportStatusTypes } = require("./prisma/generated/prisma");
+const { PrismaClient, RapportStatus } = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("Creating test report...");
+  console.log("Testrapport wordt aangemaakt...");
 
-  const report = await prisma.report.create({
+  const report = await prisma.rapport.create({
     data: {
-      title: "Database Test Report",
-      dates: ["2026-09-18"],
-      status: ReportStatusTypes.pending,
+      titel: "Databasetestrapport",
+      datums: ["2026-09-18"],
+      status: RapportStatus.in_afwachting,
     },
   });
 
-  console.log("Created report:", report.id);
+  console.log("Rapport aangemaakt:", report.id);
 
-  const ticket1 = await prisma.ticket.create({
+  const ticket1 = await prisma.melding.create({
     data: {
       topdeskId: "TEST-001",
-      category: "Hardware",
-      subCategory: "Laptop",
+      categorie: "Hardware",
+      subcategorie: "Laptop",
 
-      systems: ["Laptop"],
-      issue_types: ["hardware"],
-      briefDescriptionAI: "Test laptop issue",
+      systemen: ["Laptop"],
+      probleemtypes: ["hardware"],
+      korteBeschrijvingAI: "Testprobleem met laptop",
 
-      callerLocation: "Test location",
-      callerDepartment: "IT",
-      callerRole: "Employee",
+      melderLocatie: "Testlocatie",
+      melderAfdeling: "IT",
+      melderRol: "Medewerker",
 
-      operatorName: "Test Operator",
-      operatorGroup: "IT Support",
+      behandelaarNaam: "Testbehandelaar",
+      behandelaarGroep: "IT-ondersteuning",
 
-      closed: false,
-      completed: false,
-      responded: true,
+      gesloten: false,
+      afgerond: false,
+      gereageerd: true,
 
-      creationDate: new Date(),
-      callDate: new Date(),
+      aanmaakDatum: new Date(),
+      oproepDatum: new Date(),
 
       status: "Open",
-      entryType: "self_service",
+      invoertype: "zelfbediening",
       impact: "medium",
-      urgency: "medium",
-      priority: "medium",
+      urgentie: "medium",
+      prioriteit: "medium",
 
-      briefDescription: "Test ticket",
+      korteBeschrijving: "Testmelding",
 
-      latestUpdate: new Date(),
-      latestUpdateBy: "Test Operator",
+      laatsteBijwerking: new Date(),
+      laatstBijgewerktDoor: "Testbehandelaar",
 
-      reportId: report.id,
+      rapportId: report.id,
     },
   });
 
-  const ticket2 = await prisma.ticket.create({
+  const ticket2 = await prisma.melding.create({
     data: {
       topdeskId: "TEST-002",
-      category: "Software",
+      categorie: "Software",
 
-      systems: ["Windows"],
-      issue_types: ["software"],
-      briefDescriptionAI: "Test software issue",
+      systemen: ["Windows"],
+      probleemtypes: ["software"],
+      korteBeschrijvingAI: "Testsoftwareprobleem",
 
-      closed: true,
-      completed: true,
-      responded: true,
+      gesloten: true,
+      afgerond: true,
+      gereageerd: true,
 
-      creationDate: new Date(),
+      aanmaakDatum: new Date(),
 
       status: "Closed",
-      entryType: "mail",
-      priority: "low",
+      invoertype: "e-mail",
+      prioriteit: "laag",
 
-      reportId: report.id,
+      rapportId: report.id,
     },
   });
 
   console.log("Created tickets:", ticket1.id, ticket2.id);
 
-  const result = await prisma.report.findUnique({
+  const result = await prisma.rapport.findUnique({
     where: {
       id: report.id,
     },
     include: {
-      tickets: true,
+      meldingen: true,
     },
   });
 
-  console.log("\nReport with tickets:");
+  console.log("\nRapport met meldingen:");
   console.dir(result, { depth: null });
 
-  await prisma.ticket.deleteMany({
+  await prisma.melding.deleteMany({
     where: {
-      reportId: report.id,
+      rapportId: report.id,
     },
   });
 
-  await prisma.report.delete({
+  await prisma.rapport.delete({
     where: {
       id: report.id,
     },
   });
 
-  console.log("\nTest data deleted.");
+  console.log("\nTestgegevens verwijderd.");
 }
 
 main()

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import './App.css'
 import CategoriePage from './CategoriePage'
@@ -38,6 +38,7 @@ const filters: { key: 'all' | Status; label: string }[] = [
 const PAGE_SIZE = 4
 
 const API_URL = 'http://localhost:3000'
+const AUTH_TOKEN_KEY = 'kratty_auth_token'
 
 const stats: { label: string; status: Status; className: string }[] = [
   { label: 'OPEN', status: 'open', className: 'stat-open' },
@@ -48,6 +49,9 @@ const stats: { label: string; status: Status; className: string }[] = [
 
 function App() {
   const [loggedInUser, setLoggedInUser] = useState<string | null>(null)
+  const [authLoading, setAuthLoading] = useState(() =>
+    Boolean(localStorage.getItem(AUTH_TOKEN_KEY))
+  )
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -58,8 +62,35 @@ function App() {
   const [filter, setFilter] = useState<'all' | Status>('all')
   const [page, setPage] = useState(1)
 
+  useEffect(() => {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (!token) {
+      return
+    }
+
+    fetch(`${API_URL}/api/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          localStorage.removeItem(AUTH_TOKEN_KEY)
+          return
+        }
+
+        const user = await res.json() as { name?: string }
+        if (user.name) setLoggedInUser(user.name)
+      })
+      .catch(() => {
+        setError('Sessie kon niet worden gecontroleerd')
+      })
+      .finally(() => {
+        setAuthLoading(false)
+      })
+  }, [])
+
   async function handleLogin(e: FormEvent) {
     e.preventDefault()
+    setError('')
 
     try {
       const res = await fetch(`${API_URL}/login`, {
@@ -70,8 +101,12 @@ function App() {
       const data = await res.json()
 
       if (res.ok) {
+        if (typeof data.token !== 'string' || typeof data.name !== 'string') {
+          setError('Ongeldige loginreactie van de server')
+          return
+        }
+        localStorage.setItem(AUTH_TOKEN_KEY, data.token)
         setLoggedInUser(data.name)
-        setError('')
         setPassword('')
       } else {
         setError(data.error || 'Inloggen mislukt')
@@ -81,7 +116,17 @@ function App() {
     }
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    const token = localStorage.getItem(AUTH_TOKEN_KEY)
+    if (token) {
+      await fetch(`${API_URL}/api/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch(() => {
+        // The local token is removed even if the server is unreachable.
+      })
+    }
+    localStorage.removeItem(AUTH_TOKEN_KEY)
     setLoggedInUser(null)
     setName('')
     setView('tickets')
@@ -109,6 +154,10 @@ function App() {
   function changeSearch(text: string) {
     setSearch(text)
     setPage(1)
+  }
+
+  if (authLoading) {
+    return <main className="login-page" aria-busy="true" />
   }
 
   if (!loggedInUser) {

@@ -23,7 +23,7 @@ npm --version
 Project-KRAT/
 ├── src/                 # React-frontend
 ├── backend/             # Express-backend voor onder andere login
-├── dashboard/           # Dashboard en Prisma-databasecode
+├── backend/prisma/      # Prisma-schema, migraties en database-seed
 ├── index.html           # HTML-entrypoint van Vite
 ├── package.json         # Scripts en dependencies van de frontend
 └── vite.config.ts       # Vite-configuratie
@@ -76,32 +76,55 @@ De frontend gebruikt dit adres voor de login. Start daarom de frontend en backen
 
 Je kunt controleren of de backend draait door in de browser naar `http://localhost:3000` te gaan. Je hoort een JSON-bericht te zien dat de KRATTY-backend werkt.
 
-## Dashboard en database
+## Database lokaal instellen
 
-Het dashboard is een apart Vite-project binnen `dashboard/`. Start dit alleen wanneer je aan het dashboard of de Prisma-database werkt:
+De backend gebruikt Prisma met PostgreSQL. De Prisma-configuratie staat in `backend/prisma/`.
 
-```bash
-cd Project-KRAT/dashboard
-npm install
-npm run dev
-```
-
-De Prisma-configuratie staat in `dashboard/prisma/schema.prisma`. De database gebruikt PostgreSQL en verwacht een `DATABASE_URL` environment variable.
-
-Maak lokaal een `.env`-bestand in `dashboard/` met bijvoorbeeld:
+Maak `backend/.env` op basis van [`backend/.env.example`](backend/.env.example):
 
 ```env
 DATABASE_URL="postgresql://<gebruiker>:<wachtwoord>@localhost:5432/<database>?schema=public"
+PORT=3000
+FRONTEND_ORIGIN="http://localhost:5173"
 ```
 
 Vul de waarden in met de gegevens van je lokale PostgreSQL-database. Commit dit bestand niet.
 
-Na het instellen van de database kun je Prisma-commando's uitvoeren vanuit `dashboard/`:
+Na het instellen van de database voer je de Prisma-commando's uit vanuit `backend/`:
 
 ```bash
+cd Project-KRAT/backend
+npm install
 npx prisma generate
 npx prisma migrate dev
 ```
+
+Maak daarna een lokale gebruiker aan. Gebruik hiervoor environment variables, zodat wachtwoorden niet in de code of Git terechtkomen:
+
+Ubuntu/WSL:
+
+```bash
+export ADMIN_NAME="Developer"
+export ADMIN_EMAIL="developer@example.com"
+read -r -s ADMIN_PASSWORD
+export ADMIN_PASSWORD
+npm run db:seed
+```
+
+Het wachtwoord moet minimaal 12 tekens lang zijn. Elke gebruiker in de `User`-tabel kan inloggen. Voeg een extra gebruiker toe door dezelfde seed opnieuw uit te voeren met een andere naam en e-mail:
+
+```bash
+read -r -p "Naam: " ADMIN_NAME
+read -r -p "E-mail: " ADMIN_EMAIL
+read -r -s -p "Wachtwoord: " ADMIN_PASSWORD
+echo
+export ADMIN_NAME ADMIN_EMAIL ADMIN_PASSWORD
+npm run db:seed
+```
+
+De seed maakt een gebruiker aan of werkt de gebruiker bij wanneer hetzelfde e-mailadres al bestaat. De frontend bewaart het login-token lokaal, zodat een gewone browser-refresh ingelogd blijft. Een token vervalt na acht uur of wanneer de backend opnieuw wordt gestart.
+
+De backend biedt daarna onder andere `/api/auth/login`, `/api/tickets` en `/api/tickets/:id`. De URL-routes blijven technisch hetzelfde; de gegevensvelden en databasebenamingen zijn Nederlands.
 
 ## Aanbevolen lokale workflow
 
@@ -109,7 +132,7 @@ npx prisma migrate dev
 2. Start de backend in een aparte terminal.
 3. Start de frontend vanuit de hoofdmap.
 4. Open de URL die Vite toont, meestal `http://localhost:5173`.
-5. Gebruik het dashboard alleen als je aan de dashboard- of Prisma-functionaliteit werkt.
+5. Gebruik de Prisma-commando's alleen vanuit `backend/` wanneer je aan de database werkt.
 
 ## Problemen oplossen
 
@@ -131,4 +154,4 @@ npm run dev -- --port 5174
 
 ### Prisma kan geen databaseverbinding maken
 
-Controleer of PostgreSQL draait, of `dashboard/.env` bestaat en of `DATABASE_URL` naar de juiste database verwijst.
+Controleer of PostgreSQL draait, of `backend/.env` bestaat en of `DATABASE_URL` naar de juiste database verwijst.
