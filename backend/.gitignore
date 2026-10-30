@@ -1,3 +1,6 @@
-node_modules
+node_modules/
+.next/
 .env
-dist
+.env.local
+.env.*.local
+prisma/generated/
