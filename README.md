@@ -1,4 +1,134 @@
-# Project-KRAT
-Stage AI
-=======
-# React + TypeScript + Vite
+# KRATTY
+
+KRATTY is een ticketsysteem waarin medewerkers meldingen kunnen bekijken, zoals kapotte laptops, wifi-problemen en accountproblemen.
+
+## Vereisten
+
+Installeer eerst:
+
+- [Node.js](https://nodejs.org/) 20 of nieuwer
+- npm, meegeleverd met Node.js
+- Git, als je de repository moet clonen
+
+Controleer de installatie:
+
+```bash
+node --version
+npm --version
+```
+
+## Projectstructuur
+
+```text
+Project-KRAT/
+├── src/                 # React-frontend
+├── backend/             # Express-backend voor onder andere login
+├── dashboard/           # Dashboard en Prisma-databasecode
+├── index.html           # HTML-entrypoint van Vite
+├── package.json         # Scripts en dependencies van de frontend
+└── vite.config.ts       # Vite-configuratie
+```
+
+## Frontend lokaal starten met Vite
+
+Open een terminal in de map `Project-KRAT`:
+
+```bash
+cd Project-KRAT
+npm install
+npm run dev
+```
+
+Vite toont daarna een lokaal adres, meestal:
+
+```text
+http://localhost:5173
+```
+
+Open dit adres in de browser. Stop de ontwikkelserver met `Ctrl+C`.
+
+### Beschikbare frontend-commando's
+
+```bash
+npm run dev       # Start Vite met hot reload
+npm run build     # Voert typecheck uit en maakt een productie-build
+npm run lint      # Controleert de code met ESLint
+npm run preview   # Serveert de gemaakte productie-build lokaal
+```
+
+## Backend lokaal starten
+
+Open een tweede terminal en ga naar de backendmap:
+
+```bash
+cd Project-KRAT/backend
+npm install
+npm run dev
+```
+
+De backend draait op:
+
+```text
+http://localhost:3000
+```
+
+De frontend gebruikt dit adres voor de login. Start daarom de frontend en backend tegelijk in twee terminals.
+
+Je kunt controleren of de backend draait door in de browser naar `http://localhost:3000` te gaan. Je hoort een JSON-bericht te zien dat de KRATTY-backend werkt.
+
+## Dashboard en database
+
+Het dashboard is een apart Vite-project binnen `dashboard/`. Start dit alleen wanneer je aan het dashboard of de Prisma-database werkt:
+
+```bash
+cd Project-KRAT/dashboard
+npm install
+npm run dev
+```
+
+De Prisma-configuratie staat in `dashboard/prisma/schema.prisma`. De database gebruikt PostgreSQL en verwacht een `DATABASE_URL` environment variable.
+
+Maak lokaal een `.env`-bestand in `dashboard/` met bijvoorbeeld:
+
+```env
+DATABASE_URL="postgresql://<gebruiker>:<wachtwoord>@localhost:5432/<database>?schema=public"
+```
+
+Vul de waarden in met de gegevens van je lokale PostgreSQL-database. Commit dit bestand niet.
+
+Na het instellen van de database kun je Prisma-commando's uitvoeren vanuit `dashboard/`:
+
+```bash
+npx prisma generate
+npx prisma migrate dev
+```
+
+## Aanbevolen lokale workflow
+
+1. Start PostgreSQL wanneer je met databasegegevens werkt.
+2. Start de backend in een aparte terminal.
+3. Start de frontend vanuit de hoofdmap.
+4. Open de URL die Vite toont, meestal `http://localhost:5173`.
+5. Gebruik het dashboard alleen als je aan de dashboard- of Prisma-functionaliteit werkt.
+
+## Problemen oplossen
+
+### `npm` of `node` wordt niet gevonden
+
+Installeer Node.js opnieuw en start daarna de terminal opnieuw. Controleer vervolgens opnieuw met `node --version` en `npm --version`.
+
+### De frontend kan niet inloggen
+
+Controleer of de backend op `http://localhost:3000` draait. Controleer ook de browserconsole en het terminalvenster van de backend.
+
+### Een poort is al in gebruik
+
+Stop het proces dat de poort gebruikt of start Vite op een andere poort:
+
+```bash
+npm run dev -- --port 5174
+```
+
+### Prisma kan geen databaseverbinding maken
+
+Controleer of PostgreSQL draait, of `dashboard/.env` bestaat en of `DATABASE_URL` naar de juiste database verwijst.
