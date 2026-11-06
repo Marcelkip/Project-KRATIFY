@@ -3,95 +3,153 @@ import type { FormEvent } from 'react'
 import './App.css'
 import CategoriePage from './CategoriePage'
 
-type Status = 'open' | 'progress' | 'resolved' | 'expired'
-
-const statusLabels: Record<Status, string> = {
-  open: 'Open',
-  progress: 'In behandeling',
-  resolved: 'Opgelost',
-  expired: 'Verlopen',
+type Ticket = {
+  id: number
+  topdeskId: string
+  categorie: string
+  subcategorie?: string | null
+  korteBeschrijving?: string | null
+  korteBeschrijvingAI?: string | null
+  status?: string | null
+  prioriteit?: string | null
+  aanmaakDatum: string
+  geslotenOp?: string | null
+  oproepDatum?: string | null
+  melderNaam?: string | null
+  melder?: string | null
+  melderLocatie?: string | null
+  melderAfdeling?: string | null
+  [key: string]: unknown
 }
 
-const tickets: { id: string; subject: string; status: Status; date: string }[] = [
-  { id: 'TK-1042', subject: 'Fout bij inloggen op het portaal', status: 'open', date: '15 sep 2026' },
-  { id: 'TK-1041', subject: 'Dubbele factuur in augustus', status: 'progress', date: '14 sep 2026' },
-  { id: 'TK-1040', subject: 'Aanvraag nieuwe laptop', status: 'resolved', date: '12 sep 2026' },
-  { id: 'TK-1039', subject: 'E-mails van extern domein komen niet aan', status: 'expired', date: '8 sep 2026' },
-  { id: 'TK-1038', subject: 'Printer op de tweede verdieping storing', status: 'open', date: '16 sep 2026' },
-  { id: 'TK-1037', subject: 'Toegang tot gedeelde map aanvragen', status: 'progress', date: '17 sep 2026' },
-  { id: 'TK-1036', subject: 'Wachtwoord vergeten', status: 'resolved', date: '10 sep 2026' },
-  { id: 'TK-1035', subject: 'VPN verbreekt steeds de verbinding', status: 'open', date: '18 sep 2026' },
-  { id: 'TK-1034', subject: 'Nieuwe medewerker account aanmaken', status: 'progress', date: '19 sep 2026' },
-  { id: 'TK-1033', subject: 'Monitor flikkert', status: 'resolved', date: '9 sep 2026' },
-  { id: 'TK-1032', subject: 'Software-installatie Adobe', status: 'expired', date: '5 sep 2026' },
-  { id: 'TK-1031', subject: 'Wifi traag in vergaderruimte', status: 'open', date: '20 sep 2026' },
-]
+type TicketResponse = {
+  data: Ticket[]
+  pagination: { page: number; pageSize: number; total: number; totalPages: number }
+}
 
-const filters: { key: 'all' | Status; label: string }[] = [
-  { key: 'all', label: 'Alle' },
-  { key: 'open', label: 'Open' },
-  { key: 'progress', label: 'In behandeling' },
-  { key: 'resolved', label: 'Opgelost' },
-  { key: 'expired', label: 'Verlopen' },
-]
-
-const PAGE_SIZE = 4
+type TicketStats = {
+  total: number
+  open: number
+  progress: number
+  resolved: number
+  expired: number
+}
 
 const API_URL = 'http://localhost:3000'
 const AUTH_TOKEN_KEY = 'kratty_auth_token'
+const PAGE_SIZE = 100
 
-const stats: { label: string; status: Status; className: string }[] = [
-  { label: 'OPEN', status: 'open', className: 'stat-open' },
-  { label: 'IN BEHANDELING', status: 'progress', className: 'stat-progress' },
-  { label: 'OPGELOST', status: 'resolved', className: 'stat-resolved' },
-  { label: 'VERLOPEN', status: 'expired', className: 'stat-expired' },
-]
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem(AUTH_TOKEN_KEY)
+  const headers: Record<string, string> = {}
+  if (token) headers.Authorization = `Bearer ${token}`
+  return headers
+}
+
+function formatDate(value: string | null | undefined, withTime = false) {
+  if (!value) return 'Geen datum'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Geen datum'
+  return new Intl.DateTimeFormat('nl-NL', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}),
+  }).format(date)
+}
+
+function statusInfo(status: string | null | undefined) {
+  const value = (status ?? '').toLowerCase()
+  if (value.includes('opgelost') || value.includes('resolved') || value.includes('afgerond')) {
+    return { label: 'Opgelost', className: 'resolved' }
+  }
+  if (value.includes('behandel') || value.includes('progress') || value.includes('in behandeling')) {
+    return { label: 'In behandeling', className: 'progress' }
+  }
+  if (value.includes('verlopen') || value.includes('expired')) {
+    return { label: 'Verlopen', className: 'expired' }
+  }
+  return { label: 'Open', className: 'open' }
+}
+
+function reporterName(ticket: Ticket) {
+  return ticket.melderNaam?.trim() || ticket.melder?.trim() || 'Geen melder'
+}
 
 function App() {
   const [loggedInUser, setLoggedInUser] = useState<string | null>(null)
-  const [authLoading, setAuthLoading] = useState(() =>
-    Boolean(localStorage.getItem(AUTH_TOKEN_KEY))
-  )
+  const [authLoading, setAuthLoading] = useState(() => Boolean(localStorage.getItem(AUTH_TOKEN_KEY)))
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-
   const [view, setView] = useState<'tickets' | 'categories'>('tickets')
-
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<'all' | Status>('all')
+  const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
+  const [tickets, setTickets] = useState<Ticket[]>([])
+  const [pagination, setPagination] = useState<TicketResponse['pagination'] | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null)
+  const [openActions, setOpenActions] = useState<number | null>(null)
+  const [savingPriority, setSavingPriority] = useState(false)
+  const [stats, setStats] = useState<TicketStats>({ total: 0, open: 0, progress: 0, resolved: 0, expired: 0 })
 
   useEffect(() => {
     const token = localStorage.getItem(AUTH_TOKEN_KEY)
     if (!token) {
+      setAuthLoading(false)
       return
     }
-
-    fetch(`${API_URL}/api/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
+    fetch(`${API_URL}/api/me`, { headers: authHeaders() })
       .then(async (res) => {
         if (!res.ok) {
           localStorage.removeItem(AUTH_TOKEN_KEY)
           return
         }
-
         const user = await res.json() as { name?: string }
         if (user.name) setLoggedInUser(user.name)
       })
-      .catch(() => {
-        setError('Sessie kon niet worden gecontroleerd')
-      })
-      .finally(() => {
-        setAuthLoading(false)
-      })
+      .catch(() => setError('Sessie kon niet worden gecontroleerd'))
+      .finally(() => setAuthLoading(false))
   }, [])
 
-  async function handleLogin(e: FormEvent) {
-    e.preventDefault()
-    setError('')
+  useEffect(() => {
+    if (!loggedInUser || view !== 'tickets') return
+    const controller = new AbortController()
+    setLoading(true)
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: String(PAGE_SIZE),
+    })
+    if (search.trim()) params.set('search', search.trim())
+    if (status) params.set('status', status)
+    Promise.all([
+      fetch(`${API_URL}/api/tickets?${params}`, { headers: authHeaders(), signal: controller.signal }),
+      fetch(`${API_URL}/api/tickets/stats`, { headers: authHeaders(), signal: controller.signal }),
+    ])
+      .then(async ([ticketsRes, statsRes]) => {
+        if (!ticketsRes.ok || !statsRes.ok) throw new Error('Tickets ophalen mislukt')
+        return await Promise.all([
+          ticketsRes.json() as Promise<TicketResponse>,
+          statsRes.json() as Promise<TicketStats>,
+        ])
+      })
+      .then(([result, resultStats]) => {
+        setTickets(result.data)
+        setPagination(result.pagination)
+        setStats(resultStats)
+      })
+      .catch((reason: unknown) => {
+        if (reason instanceof DOMException && reason.name === 'AbortError') return
+        setError('Tickets konden niet worden geladen')
+      })
+      .finally(() => setLoading(false))
+    return () => controller.abort()
+  }, [loggedInUser, view, page, search, status])
 
+  async function handleLogin(event: FormEvent) {
+    event.preventDefault()
+    setError('')
     try {
       const res = await fetch(`${API_URL}/login`, {
         method: 'POST',
@@ -99,87 +157,72 @@ function App() {
         body: JSON.stringify({ name, password }),
       })
       const data = await res.json()
-
-      if (res.ok) {
-        if (typeof data.token !== 'string' || typeof data.name !== 'string') {
-          setError('Ongeldige loginreactie van de server')
-          return
-        }
-        localStorage.setItem(AUTH_TOKEN_KEY, data.token)
-        setLoggedInUser(data.name)
-        setPassword('')
-      } else {
+      if (!res.ok) {
         setError(data.error || 'Inloggen mislukt')
+        return
       }
+      if (typeof data.token !== 'string' || typeof data.name !== 'string') {
+        setError('Ongeldige loginreactie van de server')
+        return
+      }
+      localStorage.setItem(AUTH_TOKEN_KEY, data.token)
+      setLoggedInUser(data.name)
+      setPassword('')
     } catch {
       setError('Server niet bereikbaar')
     }
   }
 
   async function handleLogout() {
-    const token = localStorage.getItem(AUTH_TOKEN_KEY)
-    if (token) {
-      await fetch(`${API_URL}/api/auth/logout`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-      }).catch(() => {
-        // The local token is removed even if the server is unreachable.
-      })
-    }
+    await fetch(`${API_URL}/api/auth/logout`, {
+      method: 'POST',
+      headers: authHeaders(),
+    }).catch(() => undefined)
     localStorage.removeItem(AUTH_TOKEN_KEY)
     setLoggedInUser(null)
-    setName('')
     setView('tickets')
   }
 
-  const filteredTickets = tickets.filter((ticket) => {
-    const matchesStatus = filter === 'all' || ticket.status === filter
-    const q = search.trim().toLowerCase()
-    const matchesSearch =
-      ticket.subject.toLowerCase().includes(q) ||
-      ticket.id.toLowerCase().includes(q)
-    return matchesStatus && matchesSearch
-  })
+  async function changePriority(ticket: Ticket, priority: 'Hoog' | 'Normaal') {
+    setSavingPriority(true)
+    setError('')
+    try {
+      const res = await fetch(`${API_URL}/api/tickets/${ticket.id}`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prioriteit: priority }),
+      })
+      if (!res.ok) throw new Error('Prioriteit opslaan mislukt')
+      const updated = await res.json() as Ticket
+      setTickets((current) => current.map((item) => item.id === updated.id ? updated : item))
+      setSelectedTicket((current) => current?.id === updated.id ? updated : current)
+      setOpenActions(null)
+    } catch {
+      setError('Prioriteit kon niet worden opgeslagen')
+    } finally {
+      setSavingPriority(false)
+    }
+  }
 
-  const totalPages = Math.max(1, Math.ceil(filteredTickets.length / PAGE_SIZE))
-  const visibleTickets = filteredTickets.slice(
-    (page - 1) * PAGE_SIZE,
-    page * PAGE_SIZE
-  )
-
-  function changeFilter(newFilter: 'all' | Status) {
-    setFilter(newFilter)
+  function changeSearch(value: string) {
+    setSearch(value)
     setPage(1)
   }
-  function changeSearch(text: string) {
-    setSearch(text)
+
+  function changeStatus(value: string) {
+    setStatus(value)
     setPage(1)
   }
 
-  if (authLoading) {
-    return <main className="login-page" aria-busy="true" />
-  }
-
+  if (authLoading) return <main className="login-page" aria-busy="true" />
   if (!loggedInUser) {
     return (
       <main className="login-page">
         <form className="login-card" onSubmit={handleLogin}>
-          <h1 className="logo">
-            KRAT<span>TY</span>
-          </h1>
+          <h1 className="logo">KRAT<span>TY</span></h1>
           <h2 className="page-title">Inloggen</h2>
-          <input
-            type="text"
-            placeholder="Naam"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <input
-            type="password"
-            placeholder="Wachtwoord"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+          <input type="text" placeholder="Naam" value={name} onChange={(event) => setName(event.target.value)} />
+          <input type="password" placeholder="Wachtwoord" value={password} onChange={(event) => setPassword(event.target.value)} />
           {error && <p className="login-error">{error}</p>}
           <button type="submit">Inloggen</button>
         </form>
@@ -187,162 +230,119 @@ function App() {
     )
   }
 
+  const totalPages = pagination?.totalPages ?? 1
   return (
     <>
       <header className="topbar">
         <div className="topbar-inner">
           <div className="topbar-left">
-            <h1 className="logo">
-              KRAT<span>TY</span>
-            </h1>
+            <h1 className="logo">KRAT<span>TY</span></h1>
             <nav className="nav-tabs">
-              <button
-                className={`nav-tab ${view === 'tickets' ? 'active' : ''}`}
-                onClick={() => setView('tickets')}
-              >
-                Alle Tickets
-              </button>
-              <button
-                className={`nav-tab ${view === 'categories' ? 'active' : ''}`}
-                onClick={() => setView('categories')}
-              >
-                Categorieën
-              </button>
+              <button className={`nav-tab ${view === 'tickets' ? 'active' : ''}`} onClick={() => setView('tickets')}>Alle Tickets</button>
+              <button className={`nav-tab ${view === 'categories' ? 'active' : ''}`} onClick={() => setView('categories')}>Categorieën</button>
             </nav>
           </div>
-
           <span className="user-label">
             <span className="user-name">{loggedInUser}</span>
-            <span className="avatar">
-              {loggedInUser.slice(0, 2).toUpperCase()}
-            </span>
-            <button className="logout-btn" onClick={handleLogout}>
-              Uitloggen
-            </button>
+            <span className="avatar">{loggedInUser.slice(0, 2).toUpperCase()}</span>
+            <button className="logout-btn" onClick={handleLogout}>Uitloggen</button>
           </span>
         </div>
       </header>
 
-      {view === 'categories' ? (
-        <CategoriePage onViewAll={() => setView('tickets')} />
-      ) : (
+      {view === 'categories' ? <CategoriePage /> : (
         <main className="container">
           <h2 className="page-title">Ticketoverzicht</h2>
-
+          {error && <p className="api-error">{error}</p>}
           <section className="stats">
-            {stats.map((stat) => (
-              <div key={stat.label} className={`stat-card ${stat.className}`}>
-                <div className="stat-top">
-                  <span className="stat-label">{stat.label}</span>
-                  <span className="stat-dot"></span>
-                </div>
-                <span className="stat-value">
-                  {tickets.filter((t) => t.status === stat.status).length}
-                </span>
+            {[
+              ['TOTAAL', stats.total, 'stat-total'],
+              ['OPEN', stats.open, 'stat-open'],
+              ['IN BEHANDELING', stats.progress, 'stat-progress'],
+              ['OPGELOST', stats.resolved, 'stat-resolved'],
+              ['VERLOPEN', stats.expired, 'stat-expired'],
+            ].map(([label, count, className]) => (
+              <div key={label} className={`stat-card ${className}`}>
+                <div className="stat-top"><span className="stat-label">{label}</span>{className !== 'stat-total' && <span className="stat-dot" />}</div>
+                <span className="stat-value">{count}</span>
               </div>
             ))}
           </section>
-
           <section className="tickets-card">
             <div className="tickets-header">
-              <h3>
-                Recente tickets{' '}
-                <span className="tickets-count">
-                  ({visibleTickets.length} van {filteredTickets.length})
-                </span>
-              </h3>
-
+              <h3>Recente tickets <span className="tickets-count">({tickets.length} van {pagination?.total ?? 0})</span></h3>
               <div className="tickets-controls">
-                <input
-                  type="text"
-                  className="ticket-search"
-                  placeholder="Ticket zoeken..."
-                  value={search}
-                  onChange={(e) => changeSearch(e.target.value)}
-                />
-                {filters.map((f) => (
-                  <button
-                    key={f.key}
-                    className={`filter-btn ${filter === f.key ? 'active' : ''}`}
-                    onClick={() => changeFilter(f.key)}
-                  >
-                    {f.label}
-                  </button>
-                ))}
+                <input className="ticket-search" type="search" placeholder="⌕  Ticket zoeken..." value={search} onChange={(event) => changeSearch(event.target.value)} />
+                {[
+                  ['', 'Alle'],
+                  ['open', 'Open'],
+                  ['in behandeling', 'In behandeling'],
+                  ['opgelost', 'Opgelost'],
+                  ['verlopen', 'Verlopen'],
+                ].map(([value, label]) => <button key={value} className={`filter-btn ${status === value ? 'active' : ''}`} onClick={() => changeStatus(value)}>{label}</button>)}
               </div>
             </div>
-
-            <table className="tickets-table">
-              <thead>
-                <tr>
-                  <th>ONDERWERP</th>
-                  <th>STATUS</th>
-                  <th>VERLOOPDATUM</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleTickets.map((ticket) => (
-                  <tr
-                    key={ticket.id}
-                    className={ticket.status === 'expired' ? 'row-expired' : ''}
-                  >
-                    <td>
-                      <div className="ticket-subject">{ticket.subject}</div>
-                      <div className="ticket-id">{ticket.id}</div>
-                    </td>
-                    <td>
-                      <span className={`badge badge-${ticket.status}`}>
-                        {statusLabels[ticket.status]}
-                      </span>
-                    </td>
-                    <td
-                      className={
-                        ticket.status === 'expired' ? 'date date-expired' : 'date'
-                      }
-                    >
-                      {ticket.date}
-                    </td>
-                  </tr>
-                ))}
-                {visibleTickets.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="no-results">
-                      Geen tickets gevonden
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-
+            <div className="table-scroll">
+              <table className="tickets-table">
+                <thead><tr><th>ONDERWERP</th><th>CATEGORIE</th><th>STATUS</th><th>PRIORITEIT</th><th>VERLOOPDATUM</th><th>ACTIES</th></tr></thead>
+                <tbody>
+                  {loading && <tr><td colSpan={6} className="no-results">Tickets laden...</td></tr>}
+                  {!loading && tickets.map((ticket) => {
+                    const info = statusInfo(ticket.status)
+                    return (
+                      <tr key={ticket.id} className={info.className === 'expired' ? 'row-expired' : ''}>
+                        <td><div className="ticket-subject">{ticket.korteBeschrijving || ticket.korteBeschrijvingAI || 'Geen onderwerp'}</div><div className="ticket-id">{ticket.topdeskId}</div></td>
+                        <td><span className="category-chip">{ticket.categorie || 'Geen categorie'}</span></td>
+                        <td><span className={`badge badge-${info.className}`}>{info.label}</span></td>
+                        <td><span className={`priority priority-${(ticket.prioriteit ?? 'Normaal').toLowerCase()}`}>{ticket.prioriteit || 'Normaal'}</span></td>
+                        <td className="date">{formatDate(ticket.geslotenOp || ticket.oproepDatum)}</td>
+                        <td className="actions-cell">
+                          <button className="actions-button" aria-label="Acties openen" onClick={() => setOpenActions(openActions === ticket.id ? null : ticket.id)}>⋮</button>
+                          {openActions === ticket.id && <div className="actions-menu"><button onClick={() => { setSelectedTicket(ticket); setOpenActions(null) }}>☷&nbsp; Details bekijken</button><button onClick={() => void changePriority(ticket, ticket.prioriteit?.toLowerCase() === 'hoog' ? 'Normaal' : 'Hoog')} disabled={savingPriority}>{savingPriority ? 'Opslaan...' : 'Prioriteit aanpassen'}</button></div>}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                  {!loading && tickets.length === 0 && <tr><td colSpan={6} className="no-results">Geen tickets gevonden</td></tr>}
+                </tbody>
+              </table>
+            </div>
             <div className="tickets-footer">
-              <span>
-                Pagina {page} van {totalPages} — {filteredTickets.length} tickets
-              </span>
+              <span>Pagina {page} van {totalPages} — {pagination?.total ?? 0} tickets</span>
               <div className="pagination">
-                <button disabled={page === 1} onClick={() => setPage(page - 1)}>
-                  ‹
-                </button>
-                {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
-                  <button
-                    key={p}
-                    className={p === page ? 'active' : ''}
-                    onClick={() => setPage(p)}
-                  >
-                    {p}
-                  </button>
-                ))}
-                <button
-                  disabled={page === totalPages}
-                  onClick={() => setPage(page + 1)}
-                >
-                  ›
-                </button>
+                <button disabled={page === 1} onClick={() => setPage(page - 1)}>‹</button>
+                <button className="active">{page}</button>
+                <button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>›</button>
               </div>
             </div>
           </section>
         </main>
       )}
+      {selectedTicket && <TicketDetails ticket={selectedTicket} onClose={() => setSelectedTicket(null)} onPriorityChange={(priority) => void changePriority(selectedTicket, priority)} />}
     </>
+  )
+}
+
+function TicketDetails({ ticket, onClose, onPriorityChange }: { ticket: Ticket; onClose: () => void; onPriorityChange: (priority: 'Hoog' | 'Normaal') => void }) {
+  const info = statusInfo(ticket.status)
+  const priority = ticket.prioriteit?.toLowerCase() === 'hoog' ? 'Hoog' : 'Normaal'
+  return (
+    <div className="details-overlay" role="presentation" onClick={onClose}>
+      <aside className="details-panel" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+        <div className="details-heading"><div><div className="ticket-id">{ticket.topdeskId}</div><h2>{ticket.korteBeschrijving || ticket.korteBeschrijvingAI || 'Geen onderwerp'}</h2></div><button className="details-close" onClick={onClose}>×</button></div>
+        <div className="details-content">
+          <p className="details-label">TICKETINFORMATIE</p>
+          <div className="details-grid">
+            <div><span>Status</span><strong><span className={`badge badge-${info.className}`}>{info.label}</span></strong></div>
+            <div><span>Prioriteit</span><strong><select value={priority} onChange={(event) => onPriorityChange(event.target.value as 'Hoog' | 'Normaal')}><option>Hoog</option><option>Normaal</option></select></strong></div>
+            <div><span>Melder</span><strong>{reporterName(ticket)}</strong></div>
+            <div><span>Categorie</span><strong>{ticket.categorie || 'Geen categorie'}</strong></div>
+            <div><span>Aangemaakt</span><strong>{formatDate(ticket.aanmaakDatum, true)}</strong></div>
+            <div><span>Verloopdatum</span><strong>{formatDate(ticket.geslotenOp || ticket.oproepDatum)}</strong></div>
+          </div>
+        </div>
+      </aside>
+    </div>
   )
 }
 

@@ -74,6 +74,7 @@ model Melding {
   systemen              Json     @default("[]")
   probleemtypes         Json     @default("[]")
   korteBeschrijvingAI   String?
+  melderNaam            String?
   melderLocatie         String?
   melderAfdeling        String?
   melderRol             String?
@@ -91,7 +92,7 @@ model Melding {
   invoertype            String
   impact                String?
   urgentie              String?
-  prioriteit            String?
+  prioriteit            String   @default("Normaal")
   korteBeschrijving     String?
   laatsteBijwerking     DateTime?
   laatstBijgewerktDoor  String?

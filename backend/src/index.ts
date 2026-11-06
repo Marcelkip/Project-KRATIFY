@@ -30,10 +30,6 @@ app.use((req, res, next) => {
 
 type AuthenticatedRequest = Request & { userId?: string }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null
-}
-
 function text(value: unknown, field: string, required = false): string | undefined {
   if (typeof value !== 'string') {
     if (required) throw new HttpError(400, `${field} is verplicht`)
@@ -118,58 +114,6 @@ function clearLoginAttempts(key: string) {
   loginAttempts.delete(key)
 }
 
-function ticketData(body: unknown, partial = false): Prisma.MeldingCreateInput | Prisma.MeldingUpdateInput {
-  if (!isRecord(body)) throw new HttpError(400, 'Ongeldige JSON-body')
-
-  const data: Record<string, unknown> = {}
-  const category = text(body.categorie, 'categorie', !partial)
-  const entryType = text(body.invoertype, 'invoertype', !partial)
-  const topdeskId = text(body.topdeskId, 'topdeskId', !partial)
-
-  if (topdeskId !== undefined) data.topdeskId = topdeskId
-  if (category !== undefined) data.categorie = category
-  if (entryType !== undefined) data.invoertype = entryType
-
-  for (const field of [
-    'subcategorie', 'korteBeschrijvingAI', 'melderLocatie', 'melderAfdeling',
-    'melderRol', 'behandelaarNaam', 'behandelaarGroep', 'status', 'impact',
-    'urgentie', 'prioriteit', 'korteBeschrijving', 'laatstBijgewerktDoor',
-  ] as const) {
-    const value = text(body[field], field)
-    if (value !== undefined) data[field] = value
-  }
-
-  for (const field of ['gesloten', 'afgerond', 'gereageerd'] as const) {
-    if (body[field] !== undefined) {
-      if (typeof body[field] !== 'boolean') throw new HttpError(400, `${field} moet true of false zijn`)
-      data[field] = body[field]
-    } else if (!partial) {
-      data[field] = false
-    }
-  }
-
-  for (const field of ['aanmaakDatum', 'oproepDatum', 'geslotenOp', 'afgerondOp', 'gereageerdOp', 'laatsteBijwerking'] as const) {
-    if (body[field] !== undefined) {
-      const date = new Date(String(body[field]))
-      if (Number.isNaN(date.getTime())) throw new HttpError(400, `${field} is geen geldige datum`)
-      data[field] = date
-    } else if (field === 'aanmaakDatum' && !partial) {
-      data.aanmaakDatum = new Date()
-    }
-  }
-
-  for (const field of ['systemen', 'probleemtypes'] as const) {
-    if (body[field] !== undefined) {
-      if (!Array.isArray(body[field]) || !body[field].every((item) => typeof item === 'string')) {
-        throw new HttpError(400, `${field} moet een lijst met tekst zijn`)
-      }
-      data[field] = body[field]
-    }
-  }
-
-  return data as Prisma.MeldingCreateInput | Prisma.MeldingUpdateInput
-}
-
 app.get('/', (_req, res) => {
   res.json({ message: 'KRATTY backend werkt!' })
 })
@@ -238,7 +182,7 @@ app.get('/api/tickets', requireAuth, async (req, res, next) => {
     const status = text(queryValue(req.query.status), 'status')
     const category = text(queryValue(req.query.categorie), 'categorie')
     const where: Prisma.MeldingWhereInput = {
-      ...(status && { status }),
+      ...(status && { status: { equals: status, mode: 'insensitive' } }),
       ...(category && { categorie: category }),
       ...(search && {
         OR: [
@@ -262,6 +206,93 @@ app.get('/api/tickets', requireAuth, async (req, res, next) => {
   }
 })
 
+app.get('/api/tickets/stats', requireAuth, async (_req, res, next) => {
+  try {
+    const groups = await prisma.melding.groupBy({
+      by: ['status'],
+      _count: { _all: true },
+    })
+    const stats = { total: 0, open: 0, progress: 0, resolved: 0, expired: 0 }
+    for (const group of groups) {
+      const count = group._count._all
+      const value = (group.status ?? '').toLowerCase()
+      stats.total += count
+      if (value.includes('opgelost') || value.includes('resolved') || value.includes('afgerond')) stats.resolved += count
+      else if (value.includes('behandel') || value.includes('progress')) stats.progress += count
+      else if (value.includes('verlopen') || value.includes('expired')) stats.expired += count
+      else stats.open += count
+    }
+    res.json(stats)
+  } catch (error) {
+    next(error)
+  }
+})
+
+app.get('/api/tickets/categories', requireAuth, async (req, res, next) => {
+  try {
+    const page = Math.max(1, Number(req.query.page ?? 1))
+    const pageSize = Math.min(20, Math.max(1, Number(req.query.pageSize ?? 6)))
+    const search = text(queryValue(req.query.search), 'search')?.toLowerCase()
+    const namesValue = text(queryValue(req.query.names), 'names')
+    const requestedNames = namesValue?.split(',').map((name) => name.trim()).filter(Boolean) ?? []
+    if (!Number.isInteger(page) || !Number.isInteger(pageSize)) throw new HttpError(400, 'Ongeldige paginering')
+
+    const grouped = await prisma.melding.groupBy({
+      by: ['categorie'],
+      _count: { _all: true },
+      where: search ? {
+        OR: [
+          { categorie: { contains: search, mode: 'insensitive' } },
+          { topdeskId: { contains: search, mode: 'insensitive' } },
+          { korteBeschrijving: { contains: search, mode: 'insensitive' } },
+          { korteBeschrijvingAI: { contains: search, mode: 'insensitive' } },
+        ],
+      } : undefined,
+      orderBy: { categorie: 'asc' },
+    })
+    const groupedNames = new Map(grouped.map((group) => [group.categorie, group._count._all]))
+    const allNames = requestedNames.length > 0
+      ? requestedNames.filter((name) => !search || groupedNames.has(name))
+      : grouped.map((group) => group.categorie)
+    const total = allNames.length
+    const selected = allNames.slice((page - 1) * pageSize, page * pageSize)
+    const categories = await Promise.all(selected.map(async (name) => ({
+      name,
+      total: groupedNames.get(name) ?? 0,
+      tickets: await prisma.melding.findMany({
+        where: {
+          categorie: name,
+          ...(search && {
+            OR: [
+              { categorie: { contains: search, mode: 'insensitive' } },
+              { topdeskId: { contains: search, mode: 'insensitive' } },
+              { korteBeschrijving: { contains: search, mode: 'insensitive' } },
+              { korteBeschrijvingAI: { contains: search, mode: 'insensitive' } },
+            ],
+          }),
+        },
+        orderBy: { aanmaakDatum: 'desc' },
+        take: 50,
+        select: {
+          id: true,
+          topdeskId: true,
+          korteBeschrijving: true,
+          korteBeschrijvingAI: true,
+          status: true,
+          prioriteit: true,
+          aanmaakDatum: true,
+        },
+      }),
+    })))
+    res.json({
+      data: categories,
+      pagination: { page, pageSize, total, totalPages: Math.max(1, Math.ceil(total / pageSize)) },
+    })
+  } catch (error) {
+    next(error)
+  }
+})
+
 app.get('/api/tickets/:id', requireAuth, async (req, res, next) => {
   try {
     const ticket = await prisma.melding.findUnique({ where: { id: parseId(routeParam(req.params.id)) } })
@@ -272,20 +303,22 @@ app.get('/api/tickets/:id', requireAuth, async (req, res, next) => {
   }
 })
 
-app.post('/api/tickets', requireAuth, async (req, res, next) => {
-  try {
-    const ticket = await prisma.melding.create({ data: ticketData(req.body) as Prisma.MeldingCreateInput })
-    res.status(201).json(ticket)
-  } catch (error) {
-    next(error)
-  }
-})
-
 app.patch('/api/tickets/:id', requireAuth, async (req, res, next) => {
   try {
+    if (typeof req.body !== 'object' || req.body === null || Array.isArray(req.body)) {
+      throw new HttpError(400, 'Ongeldige JSON-body')
+    }
+    const body = req.body as Record<string, unknown>
+    const allowedFields = Object.keys(body)
+    if (allowedFields.length !== 1 || allowedFields[0] !== 'prioriteit') {
+      throw new HttpError(400, 'Alleen prioriteit kan worden aangepast')
+    }
+    if (body.prioriteit !== 'Hoog' && body.prioriteit !== 'Normaal') {
+      throw new HttpError(400, 'Prioriteit moet Hoog of Normaal zijn')
+    }
     const ticket = await prisma.melding.update({
       where: { id: parseId(routeParam(req.params.id)) },
-      data: ticketData(req.body, true) as Prisma.MeldingUpdateInput,
+      data: { prioriteit: body.prioriteit },
     })
     res.json(ticket)
   } catch (error) {
