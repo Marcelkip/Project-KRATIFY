@@ -176,11 +176,14 @@ app.get('/api/me', requireAuth, async (req: AuthenticatedRequest, res, next) => 
 app.get('/api/tickets', requireAuth, async (req, res, next) => {
   try {
     const page = Math.max(1, Number(req.query.page ?? 1))
-    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 20)))
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize ?? 100)))
     if (!Number.isInteger(page) || !Number.isInteger(pageSize)) throw new HttpError(400, 'Ongeldige paginering')
     const search = text(queryValue(req.query.search), 'search')
     const status = text(queryValue(req.query.status), 'status')
     const category = text(queryValue(req.query.categorie), 'categorie')
+    const sort = text(queryValue(req.query.sort), 'sort') ?? 'newest'
+    const validSorts = new Set(['newest', 'oldest'])
+    if (!validSorts.has(sort)) throw new HttpError(400, 'Ongeldige sortering')
     const where: Prisma.MeldingWhereInput = {
       ...(status && { status: { equals: status, mode: 'insensitive' } }),
       ...(category && { categorie: category }),
@@ -191,38 +194,20 @@ app.get('/api/tickets', requireAuth, async (req, res, next) => {
         ],
       }),
     }
-    const [tickets, total] = await prisma.$transaction([
+    const orderBy: Prisma.MeldingOrderByWithRelationInput =
+      sort === 'oldest' ? { aanmaakDatum: 'asc' }
+        : { aanmaakDatum: 'desc' }
+    const [tickets, total, totalOverall] = await prisma.$transaction([
       prisma.melding.findMany({
         where,
-        orderBy: { aanmaakDatum: 'desc' },
+        orderBy,
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
       prisma.melding.count({ where }),
+      prisma.melding.count(),
     ])
-    res.json({ data: tickets, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } })
-  } catch (error) {
-    next(error)
-  }
-})
-
-app.get('/api/tickets/stats', requireAuth, async (_req, res, next) => {
-  try {
-    const groups = await prisma.melding.groupBy({
-      by: ['status'],
-      _count: { _all: true },
-    })
-    const stats = { total: 0, open: 0, progress: 0, resolved: 0, expired: 0 }
-    for (const group of groups) {
-      const count = group._count._all
-      const value = (group.status ?? '').toLowerCase()
-      stats.total += count
-      if (value.includes('opgelost') || value.includes('resolved') || value.includes('afgerond')) stats.resolved += count
-      else if (value.includes('behandel') || value.includes('progress')) stats.progress += count
-      else if (value.includes('verlopen') || value.includes('expired')) stats.expired += count
-      else stats.open += count
-    }
-    res.json(stats)
+    res.json({ data: tickets, pagination: { page, pageSize, total, totalOverall, totalPages: Math.ceil(total / pageSize) } })
   } catch (error) {
     next(error)
   }
@@ -237,34 +222,47 @@ app.get('/api/tickets/categories', requireAuth, async (req, res, next) => {
     const requestedNames = namesValue?.split(',').map((name) => name.trim()).filter(Boolean) ?? []
     if (!Number.isInteger(page) || !Number.isInteger(pageSize)) throw new HttpError(400, 'Ongeldige paginering')
 
-    const grouped = await prisma.melding.groupBy({
-      by: ['categorie'],
-      _count: { _all: true },
-      where: search ? {
-        OR: [
-          { categorie: { contains: search, mode: 'insensitive' } },
-          { topdeskId: { contains: search, mode: 'insensitive' } },
-          { korteBeschrijving: { contains: search, mode: 'insensitive' } },
-          { korteBeschrijvingAI: { contains: search, mode: 'insensitive' } },
-        ],
-      } : undefined,
-      orderBy: { categorie: 'asc' },
+    const categoryWhere: Prisma.CategorieWhereInput = search ? {
+      OR: [
+        { naam: { contains: search, mode: 'insensitive' } },
+        { meldingen: { some: {
+          OR: [
+            { topdeskId: { contains: search, mode: 'insensitive' } },
+            { korteBeschrijving: { contains: search, mode: 'insensitive' } },
+            { korteBeschrijvingAI: { contains: search, mode: 'insensitive' } },
+          ],
+        } } },
+      ],
+    } : {}
+    const grouped = await prisma.categorie.findMany({
+      where: categoryWhere,
+      orderBy: { naam: 'asc' },
+      select: { id: true, naam: true },
     })
-    const groupedNames = new Map(grouped.map((group) => [group.categorie, group._count._all]))
+    const groupedNames = new Set(grouped.map((category) => category.naam))
+    const categoryIds = new Map(grouped.map((category) => [category.naam, category.id]))
     const allNames = requestedNames.length > 0
       ? requestedNames.filter((name) => !search || groupedNames.has(name))
-      : grouped.map((group) => group.categorie)
+      : grouped.map((category) => category.naam)
     const total = allNames.length
     const selected = allNames.slice((page - 1) * pageSize, page * pageSize)
-    const categories = await Promise.all(selected.map(async (name) => ({
+    const categories = await Promise.all(selected.map(async (name: string) => ({
       name,
-      total: groupedNames.get(name) ?? 0,
+      total: await prisma.melding.count({ where: {
+        categorieId: categoryIds.get(name),
+        ...(search && {
+          OR: [
+            { topdeskId: { contains: search, mode: 'insensitive' } },
+            { korteBeschrijving: { contains: search, mode: 'insensitive' } },
+            { korteBeschrijvingAI: { contains: search, mode: 'insensitive' } },
+          ],
+        }),
+      } }),
       tickets: await prisma.melding.findMany({
         where: {
-          categorie: name,
+          categorieId: categoryIds.get(name),
           ...(search && {
             OR: [
-              { categorie: { contains: search, mode: 'insensitive' } },
               { topdeskId: { contains: search, mode: 'insensitive' } },
               { korteBeschrijving: { contains: search, mode: 'insensitive' } },
               { korteBeschrijvingAI: { contains: search, mode: 'insensitive' } },
@@ -272,14 +270,11 @@ app.get('/api/tickets/categories', requireAuth, async (req, res, next) => {
           }),
         },
         orderBy: { aanmaakDatum: 'desc' },
-        take: 50,
         select: {
           id: true,
           topdeskId: true,
           korteBeschrijving: true,
           korteBeschrijvingAI: true,
-          status: true,
-          prioriteit: true,
           aanmaakDatum: true,
         },
       }),
@@ -297,29 +292,6 @@ app.get('/api/tickets/:id', requireAuth, async (req, res, next) => {
   try {
     const ticket = await prisma.melding.findUnique({ where: { id: parseId(routeParam(req.params.id)) } })
     if (!ticket) throw new HttpError(404, 'Ticket niet gevonden')
-    res.json(ticket)
-  } catch (error) {
-    next(error)
-  }
-})
-
-app.patch('/api/tickets/:id', requireAuth, async (req, res, next) => {
-  try {
-    if (typeof req.body !== 'object' || req.body === null || Array.isArray(req.body)) {
-      throw new HttpError(400, 'Ongeldige JSON-body')
-    }
-    const body = req.body as Record<string, unknown>
-    const allowedFields = Object.keys(body)
-    if (allowedFields.length !== 1 || allowedFields[0] !== 'prioriteit') {
-      throw new HttpError(400, 'Alleen prioriteit kan worden aangepast')
-    }
-    if (body.prioriteit !== 'Hoog' && body.prioriteit !== 'Normaal') {
-      throw new HttpError(400, 'Prioriteit moet Hoog of Normaal zijn')
-    }
-    const ticket = await prisma.melding.update({
-      where: { id: parseId(routeParam(req.params.id)) },
-      data: { prioriteit: body.prioriteit },
-    })
     res.json(ticket)
   } catch (error) {
     next(error)

@@ -1,6 +1,6 @@
 # KRATTY
 
-KRATTY is een ticketsysteem waarin medewerkers meldingen kunnen bekijken, zoals kapotte laptops, wifi-problemen en accountproblemen.
+KRATTY is een read-only ticketsysteem waarin medewerkers meldingen kunnen bekijken, zoals kapotte laptops, wifi-problemen en accountproblemen. De website wijzigt geen tickets; de data komt uit de bestaande database.
 
 ## Vereisten
 
@@ -28,6 +28,8 @@ Project-KRAT/
 ├── package.json         # Scripts en dependencies van de frontend
 └── vite.config.ts       # Vite-configuratie
 ```
+
+De database bevat naast `Melding` ook het model `Categorie`. De vaste categorieën zijn gekoppeld aan meldingen via `Melding.categorieId`; de categoriepagina toont per categorie alle gekoppelde tickets.
 
 ## Frontend lokaal starten met Vite
 
@@ -124,7 +126,7 @@ npm run db:seed
 
 De seed maakt een gebruiker aan of werkt de gebruiker bij wanneer hetzelfde e-mailadres al bestaat. De frontend bewaart het login-token lokaal, zodat een gewone browser-refresh ingelogd blijft. Een token vervalt na acht uur of wanneer de backend opnieuw wordt gestart.
 
-De backend biedt daarna onder andere `/api/auth/login`, `/api/tickets` en `/api/tickets/:id`. De URL-routes blijven technisch hetzelfde; de gegevensvelden en databasebenamingen zijn Nederlands.
+De backend biedt daarna onder andere `/api/auth/login`, `/api/tickets`, `/api/tickets/categories` en `/api/tickets/:id`. De URL-routes blijven technisch hetzelfde; de gegevensvelden en databasebenamingen zijn Nederlands. De frontend toont tickets gegroepeerd onder de vaste categorieën Hardware, Account & Inloggen, Facturatie, Netwerk & E-mail, Printer & Scannen en Beveiliging. Status en prioriteit worden niet als werkbare velden getoond.
 
 ## Aanbevolen lokale workflow
 

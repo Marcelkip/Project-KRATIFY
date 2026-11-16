@@ -66,10 +66,20 @@ model RapportTrendSamenvatting {
   @@map("RapportTrendSamenvatting")
 }
 
+model Categorie {
+  id        Int      @id @default(autoincrement())
+  naam      String   @unique
+  meldingen Melding[]
+
+  @@map("Categorie")
+}
+
 model Melding {
   id                    Int      @id @default(autoincrement())
   topdeskId             String   @unique
   categorie             String
+  categorieId           Int?
+  categorieRelatie      Categorie? @relation(fields: [categorieId], references: [id], onDelete: SetNull)
   subcategorie          String?
   systemen              Json     @default("[]")
   probleemtypes         Json     @default("[]")
@@ -100,6 +110,7 @@ model Melding {
   rapport               Rapport? @relation(fields: [rapportId], references: [id])
 
   @@index([categorie])
+  @@index([categorieId])
   @@index([subcategorie])
   @@index([aanmaakDatum])
   @@index([gesloten])

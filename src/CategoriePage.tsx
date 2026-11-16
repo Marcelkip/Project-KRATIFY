@@ -1,14 +1,11 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 
-type Status = 'open' | 'progress' | 'resolved' | 'expired'
 type CategoryTicket = {
   id: number
   topdeskId: string
   korteBeschrijving?: string | null
   korteBeschrijvingAI?: string | null
-  status?: string | null
-  prioriteit?: string | null
   aanmaakDatum: string
 }
 type Category = { name: string; icon: ReactNode; total: number; tickets: CategoryTicket[] }
@@ -27,25 +24,9 @@ const categoryDefinitions: Omit<Category, 'total' | 'tickets'>[] = [
   { name: 'Beveiliging', icon: <svg {...iconProps}><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /></svg> },
 ]
 
-const statusLabels: Record<Status, string> = { open: 'Open', progress: 'In behandeling', resolved: 'Opgelost', expired: 'Verlopen' }
-const summary: { label: string; status: Status; className: string }[] = [
-  { label: 'Open', status: 'open', className: 'summary-open' },
-  { label: 'In behandeling', status: 'progress', className: 'summary-progress' },
-  { label: 'Opgelost', status: 'resolved', className: 'summary-resolved' },
-  { label: 'Verlopen', status: 'expired', className: 'summary-expired' },
-]
-
 function headers(): Record<string, string> {
   const token = localStorage.getItem(AUTH_TOKEN_KEY)
   return token ? { Authorization: `Bearer ${token}` } : {}
-}
-
-function statusInfo(status: string | null | undefined) {
-  const value = (status ?? '').toLowerCase()
-  if (value.includes('opgelost') || value.includes('resolved') || value.includes('afgerond')) return { label: 'Opgelost', className: 'resolved' as Status }
-  if (value.includes('behandel') || value.includes('progress')) return { label: 'In behandeling', className: 'progress' as Status }
-  if (value.includes('verlopen') || value.includes('expired')) return { label: 'Verlopen', className: 'expired' as Status }
-  return { label: 'Open', className: 'open' as Status }
 }
 
 function formatDate(value: string | null | undefined) {
@@ -96,28 +77,27 @@ function CategoriePage() {
         ),
       )
     : categories
-  const allTickets = categories.flatMap((category) => category.tickets)
   const totalPages = Math.max(1, Math.ceil(totalCategories / 6))
-  const summaryCount = (status: Status) => allTickets.filter((ticket) => statusInfo(ticket.status).className === status).length
+  const totalTickets = categories.reduce((total, category) => total + category.total, 0)
 
   return (
     <main className="container">
       <div className="page-head"><div><h2 className="page-title">Tickets per Categorie</h2><p className="page-subtitle">Overzicht op categorieën</p></div><div className="cat-search"><input type="search" placeholder="Zoek in categorieën..." value={search} onChange={(event) => { setSearch(event.target.value); setPage(1) }} /></div></div>
-      <section className="summary">{summary.map((item) => <div key={item.label} className={`summary-card ${item.className}`}><span className="summary-dot" /><div><div className="summary-value">{summaryCount(item.status)}</div><div className="summary-label">{item.label}</div></div></div>)}</section>
+      <section className="category-total-card"><span className="category-total-icon">#</span><div><span className="summary-label">TOTAAL AANWEZIGE TICKETS</span><strong>{totalTickets}</strong><small>Read-only overzicht uit de database</small></div></section>
       <section className="cat-grid">
         {loading && <p className="cat-empty">Categorieën laden...</p>}
         {!loading && visibleCategories.map((category) => (
           <article key={category.name} className="cat-card">
             <div className="cat-header"><div className="cat-title"><span className="cat-icon">{category.icon}</span><h3>{category.name}</h3></div><span className="cat-badge">{category.total} tickets</span></div>
             <div className="cat-ticket-scroll">
-              {category.tickets.map((ticket) => { const info = statusInfo(ticket.status); return <div key={ticket.id} className="cat-ticket"><div><div className="cat-ticket-subject">{ticket.korteBeschrijving || ticket.korteBeschrijvingAI || 'Geen onderwerp'}</div><div className="cat-ticket-meta">{ticket.topdeskId} · {formatDate(ticket.aanmaakDatum)}</div></div><span className={`badge badge-${info.className}`}>{statusLabels[info.className]}</span></div> })}
+              {category.tickets.map((ticket) => <div key={ticket.id} className="cat-ticket"><div><div className="cat-ticket-subject">{ticket.korteBeschrijving || ticket.korteBeschrijvingAI || 'Geen onderwerp'}</div><div className="cat-ticket-meta">{ticket.topdeskId} · {formatDate(ticket.aanmaakDatum)}</div></div></div>)}
               {category.tickets.length === 0 && <p className="cat-empty">Geen tickets in deze categorie</p>}
             </div>
             <button className="cat-link" onClick={() => setSelectedCategory(category)}>Bekijk alle {category.name} tickets →</button>
           </article>
         ))}
       </section>
-      <footer className="cat-footer"><span>Totaal <strong>{allTickets.length}</strong> geladen tickets over <strong>{totalCategories}</strong> categorieën</span><div className="pagination"><button disabled={page === 1} onClick={() => setPage(page - 1)}>‹</button><button className="active">{page}</button><button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>›</button></div><span className="cat-copyright">© 2026 Kratty IT Support</span></footer>
+      <footer className="cat-footer"><span><strong>{totalTickets}</strong> tickets over <strong>{totalCategories}</strong> categorieën</span><div className="pagination"><button disabled={page === 1} onClick={() => setPage(page - 1)}>‹</button><button className="active">{page}</button><button disabled={page >= totalPages} onClick={() => setPage(page + 1)}>›</button></div><span className="cat-copyright">© 2026 Kratty IT Support</span></footer>
       {selectedCategory && (
         <CategoryPanel category={selectedCategory} onClose={() => setSelectedCategory(null)} />
       )}
@@ -140,7 +120,6 @@ function CategoryPanel({ category, onClose }: { category: Category; onClose: () 
         <div className="category-panel-list">
           {category.tickets.length === 0 && <p className="cat-empty">Geen tickets in deze categorie</p>}
           {category.tickets.map((ticket) => {
-            const info = statusInfo(ticket.status)
             return (
               <article key={ticket.id} className="category-panel-ticket">
                 <div>
@@ -148,10 +127,7 @@ function CategoryPanel({ category, onClose }: { category: Category; onClose: () 
                   <span>{ticket.topdeskId}</span>
                   <small>{formatDate(ticket.aanmaakDatum)}</small>
                 </div>
-                <div className="category-panel-ticket-badges">
-                  <span className={`badge badge-${info.className}`}>{info.label}</span>
-                  <span className={`priority priority-${(ticket.prioriteit ?? 'Normaal').toLowerCase()}`}>{ticket.prioriteit || 'Normaal'}</span>
-                </div>
+                <time>{formatDate(ticket.aanmaakDatum)}</time>
               </article>
             )
           })}

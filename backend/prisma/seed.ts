@@ -24,6 +24,21 @@ async function main() {
     create: { naam: name, emailadres: email, wachtwoord: hashPassword(password) },
   })
 
+  const categoryNames = [
+    'Hardware',
+    'Account & Inloggen',
+    'Facturatie',
+    'Netwerk & E-mail',
+    'Printer & Scannen',
+    'Beveiliging',
+  ]
+  const categories = await Promise.all(categoryNames.map((naam) => prisma.categorie.upsert({
+    where: { naam },
+    update: {},
+    create: { naam },
+  })))
+  const categoryIds = new Map(categories.map((category) => [category.naam, category.id]))
+
   await prisma.melding.deleteMany({
     where: {
       OR: [
@@ -37,6 +52,7 @@ async function main() {
     where: { topdeskId: 'DEMO-WIFI-001' },
     update: {
       categorie: 'Netwerk & E-mail',
+      categorieId: categoryIds.get('Netwerk & E-mail'),
       subcategorie: 'Draadloos netwerk',
       korteBeschrijvingAI: 'Wifi werkt niet in de vergaderruimte',
       korteBeschrijving: 'Wifi werkt niet in vergaderruimte B',
@@ -47,6 +63,7 @@ async function main() {
     create: {
       topdeskId: 'DEMO-WIFI-001',
       categorie: 'Netwerk & E-mail',
+      categorieId: categoryIds.get('Netwerk & E-mail'),
       subcategorie: 'Draadloos netwerk',
       systemen: ['Wifi'],
       probleemtypes: ['Verbinding'],
@@ -72,21 +89,14 @@ async function main() {
     const number = index + 2
     const createdAt = new Date()
     createdAt.setDate(createdAt.getDate() - index)
-    const categories = [
-      'Hardware',
-      'Account & Inloggen',
-      'Facturatie',
-      'Netwerk & E-mail',
-      'Printer & Scannen',
-      'Beveiliging',
-    ]
     const statuses = ['Open', 'In behandeling', 'Opgelost', 'Verlopen']
-    const category = categories[index % categories.length]
+    const category = categoryNames[index % categoryNames.length]
     const status = statuses[index % statuses.length]
 
     return {
       topdeskId: `DEMO-TICKET-${String(number).padStart(3, '0')}`,
       categorie: category,
+      categorieId: categoryIds.get(category)!,
       subcategorie: category === 'Netwerk & E-mail' ? 'Draadloos netwerk' : 'Algemene melding',
       systemen: [category],
       probleemtypes: ['Demo-test'],

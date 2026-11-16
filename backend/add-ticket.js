@@ -11,10 +11,15 @@ async function main() {
     },
   });
 
+  const categorie = await prisma.categorie.findUniqueOrThrow({
+    where: { naam: "Hardware" },
+  });
+
   const ticket = await prisma.melding.create({
     data: {
       topdeskId: "KRAT-TEST-001",
       categorie: "Hardware",
+      categorieId: categorie.id,
       subcategorie: "Laptop",
       systemen: ["Laptop"],
       probleemtypes: ["hardware"],
