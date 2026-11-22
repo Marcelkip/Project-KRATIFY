@@ -1,0 +1,139 @@
+// NOTE: Voor de mensen die later dit bestand gaan lezen:
+// We gebruiken hier SQLite de redenen:
+// - Wordt lokaal gerunned, dus geen derde partij database nodig
+// - Performance voor onze use case is prima
+// - Backups maken is zo gepiept.
+//
+// Indien dit project zo groot wordt dat scalability een issue wordt,
+// is het vrij simpel om te switchen. Kijk hiervoor de Prisma documentatie.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "./generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Authentication
+model User {
+  id  String @id @default(cuid())
+  name String
+  email String @unique
+  password String
+}
+
+model Report {
+  id      Int      @id @default(autoincrement())
+  title   String
+  dates   Json // JSON string with list of dates
+
+  // Relations
+  tickets Ticket[]
+  chartDescriptions ChartDescriptions[]
+  trendSummaryId ReportTrendsSummary?
+
+  createdAt         DateTime            @default(now())
+
+  // The status automaticly gets to be set on pending.
+  // When the request on the AI server has been done to generate descriptions for all tickets
+  // the AI server will mark the ticket as either completed or failed
+  // "pending" | "completed" | "failed"
+  status            ReportStatusTypes
+
+  @@index([createdAt])
+}
+
+enum ReportStatusTypes {
+  pending
+  review_required
+  completed
+  failed
+}
+
+model ChartDescriptions {
+  id              Int      @id @default(autoincrement())
+  chartType       String
+  description     String
+  trendType       String?
+  severity        String?
+  possibleActions Json?
+
+  changeReason String?
+
+  reportId        Int?
+  report          Report?  @relation(fields: [reportId], references: [id])
+
+  @@unique([reportId, chartType])
+}
+model ReportTrendsSummary {
+  id                 Int      @id @default(autoincrement())
+  summary            String
+  highlights         Json?
+  risks              Json?
+  recommendedActions Json?
+
+  reportId        Int?
+  report          Report?  @relation(fields: [reportId], references: [id])
+
+  @@unique([reportId])
+}
+
+model Ticket {
+  id        Int    @id @default(autoincrement())
+  topdeskId String
+
+  category    String // Category of the ticket (Topdesk Data)
+  subCategory String? // Subcategory of the ticket (Topdesk Data)
+
+  // AI generated fields
+  systems           Json @default("[]") // List of affected services.
+  issue_types       Json @default("[]") // List of "subcategories" that can be seen as keywords of the ticket description
+  briefDescriptionAI String? // Short summary of the ticket that describes the issue.
+
+  // Caller information
+  callerLocation   String? // Street address of the where the ticket was made for. (Topdesk Data)
+  callerDepartment String? // Department of the caller (Topdesk Data)
+  callerRole       String? // Role of the caller within their department (Topdesk Data)
+
+  // Operator information
+  operatorName    String? // Name of the operator handling the ticket (Topdesk Data)
+  operatorGroup String? // Group of the operator handling the ticket (Topdesk Data)
+
+  // Ticket information
+  closed     Boolean // Whether the ticket is closed
+  closedDate DateTime? // Date when the ticket was closed
+
+  completed     Boolean // Whether the ticket is completed
+  completedDate DateTime? // Date when the ticket was completed
+
+  responded     Boolean // Whether the ticket has been responded to
+  respondedDate DateTime? // Date when the ticket was responded to
+
+  creationDate DateTime // Date when the ticket was created (This is likely the system date on Topdesk's end)
+  callDate     DateTime? // Date when the ticket was called in / reported
+
+  status    String? // Whether the ticket was handled by first line or second line support
+  entryType String // "phone" | "self_service" | "mail"
+  impact    String? // Impact of the ticket (Topdesk Data)
+  urgency   String? // Urgency of the ticket (Topdesk Data)
+  priority  String? // "none" | "low" | "medium" | "high"
+  briefDescription String?
+
+  latestUpdate   DateTime? // Date of the latest update to the ticket (Topdesk Data [modificationDate])
+  latestUpdateBy String? // Name of the person who made the latest update (Topdesk Data [modifiedBy])
+
+  reportId Int?
+  report   Report? @relation(fields: [reportId], references: [id])
+
+  @@index([category])
+  @@index([subCategory])
+  @@index([creationDate])
+  @@index([closed])
+  @@index([completed])
+  @@index([status])
+  @@index([entryType])
+  @@index([priority])
+  @@index([callerDepartment])
+}

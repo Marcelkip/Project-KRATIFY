@@ -24,3 +24,35 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Environment files and secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Next.js
+.next/
+out/
+coverage/
+
+# Generated Prisma client
+dashboard/prisma/generated/
+dashboard/src/generated/
+
+# AI models
+*.safetensors
+*.gguf
+*.bin
+
+# Temporary and backup files
+*.bak
+*.tmp
